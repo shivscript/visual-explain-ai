@@ -16,29 +16,39 @@ You are an expert teacher.
 
 Explain the topic: "${topic}"
 
-Return STRICT JSON format:
+Return STRICT JSON in exactly this shape — no markdown, no code fences, no prose outside the JSON:
 
 {
   "title": "",
   "summary": "",
   "components": [],
   "steps": [],
-  "diagram_type": "flowchart | sequence",
+  "diagram_type": "flowchart",
   "diagram_code": ""
 }
 
-Rules:
-- Keep explanation simple.
-- "steps" must be an array of plain sentences. Do NOT prefix with numbers or bullets.
-- "components" must be an array of plain strings.
-- Diagram must be valid Mermaid v11 syntax.
-- In Mermaid node labels, if the text contains any special characters
-  (parentheses, commas, colons, slashes, quotes, hyphens, etc.),
-  you MUST wrap the label in double quotes. Example:
-    A["Perception Layer (LLM, CV, Sensors)"] --> B["Knowledge Base"]
-  Plain alphanumeric labels do not need quotes.
-- Keep node IDs short and alphanumeric (A, B, C, Step1, etc.).
-- No extra text, comments, or markdown outside the JSON.
+Content rules:
+- "title": short, 3-8 words.
+- "summary": 2-4 sentences, plain language.
+- "components": array of short plain strings. No numbering, no bullets.
+- "steps": array of plain sentences describing the process in order.
+  Do NOT prefix any step with numbers, bullets, or dashes.
+
+Diagram rules (very important):
+- "diagram_type" must be exactly "flowchart".
+- "diagram_code" must be valid Mermaid v11 flowchart syntax.
+- Start with: flowchart TD
+- Use short alphanumeric node IDs (A, B, C, D ...). Never use IDs with
+  spaces, punctuation, or unicode.
+- If a node label contains ANY of these characters: space, parenthesis,
+  comma, colon, slash, quote, hyphen, ampersand, question mark,
+  you MUST wrap the entire label in double quotes.
+  Example: A["Perception Layer"] --> B["Knowledge Base (RAG)"]
+- Never use backticks anywhere.
+- Never include markdown code fences (no \`\`\`mermaid).
+- Keep the graph to 4-10 nodes.
+
+Output ONLY the JSON object. Nothing before it, nothing after it.
 `;
 
     const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
@@ -79,7 +89,11 @@ Rules:
     }
 
     try {
-      return NextResponse.json(JSON.parse(content));
+      const cleaned = content
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/i, "");
+      return NextResponse.json(JSON.parse(cleaned));
     } catch {
       return NextResponse.json(
         { error: "Model did not return valid JSON", raw: content },
