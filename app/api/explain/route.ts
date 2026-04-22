@@ -28,10 +28,17 @@ Return STRICT JSON format:
 }
 
 Rules:
-- Keep explanation simple
-- Steps must be clear
-- Diagram must be Mermaid format
-- No extra text outside JSON
+- Keep explanation simple.
+- "steps" must be an array of plain sentences. Do NOT prefix with numbers or bullets.
+- "components" must be an array of plain strings.
+- Diagram must be valid Mermaid v11 syntax.
+- In Mermaid node labels, if the text contains any special characters
+  (parentheses, commas, colons, slashes, quotes, hyphens, etc.),
+  you MUST wrap the label in double quotes. Example:
+    A["Perception Layer (LLM, CV, Sensors)"] --> B["Knowledge Base"]
+  Plain alphanumeric labels do not need quotes.
+- Keep node IDs short and alphanumeric (A, B, C, Step1, etc.).
+- No extra text, comments, or markdown outside the JSON.
 `;
 
     const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";

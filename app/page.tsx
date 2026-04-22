@@ -1,5 +1,6 @@
 "use client";
 
+import Diagram from "@/components/Diagram";
 import { useState } from "react";
 
 type ExplainResult = {
@@ -125,7 +126,7 @@ export default function Home() {
                     </h4>
                     <ol className="list-decimal pl-5 text-gray-700">
                       {result.steps.map((s, i) => (
-                        <li key={i}>{s}</li>
+                        <li key={i}>{s.replace(/^\s*\d+[.)]\s*/, "")}</li>
                       ))}
                     </ol>
                   </div>
@@ -146,9 +147,7 @@ export default function Home() {
                 <p className="text-sm text-gray-500">
                   Type: {result.diagram_type}
                 </p>
-                <pre className="overflow-auto rounded-lg bg-gray-100 p-4 text-sm">
-                  <code>{result.diagram_code}</code>
-                </pre>
+                <Diagram code={result.diagram_code} />
               </div>
             )}
           </section>
