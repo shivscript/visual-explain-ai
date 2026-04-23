@@ -13,6 +13,14 @@ type ExplainResult = {
   diagram_code: string;
 };
 
+type Level = "beginner" | "intermediate" | "advanced";
+
+const LEVELS: { value: Level; label: string }[] = [
+  { value: "beginner", label: "Beginner" },
+  { value: "intermediate", label: "Intermediate" },
+  { value: "advanced", label: "Advanced" },
+];
+
 const EXAMPLES = [
   "What is AI?",
   "How HTTP works",
@@ -22,6 +30,7 @@ const EXAMPLES = [
 
 export default function Home() {
   const [topic, setTopic] = useState("");
+  const [level, setLevel] = useState<Level>("intermediate");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExplainResult | null>(null);
@@ -37,7 +46,7 @@ export default function Home() {
       const res = await fetch("/api/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: nextTopic }),
+        body: JSON.stringify({ topic: nextTopic, level }),
       });
 
       const data = await res.json();
@@ -109,6 +118,28 @@ export default function Home() {
               placeholder="Explain how HTTP works"
               className="min-h-32 rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none ring-0 placeholder:text-gray-400 focus:border-black"
             />
+
+            <div className="flex flex-wrap items-center gap-3">
+              <label
+                htmlFor="level"
+                className="text-sm font-medium text-gray-700"
+              >
+                Level
+              </label>
+              <select
+                id="level"
+                value={level}
+                onChange={(e) => setLevel(e.target.value as Level)}
+                disabled={loading}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-black disabled:opacity-50"
+              >
+                {LEVELS.map((l) => (
+                  <option key={l.value} value={l.value}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium uppercase tracking-wide text-gray-500">

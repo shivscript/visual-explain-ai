@@ -1,8 +1,22 @@
 import { NextResponse } from "next/server";
 
+type Level = "beginner" | "intermediate" | "advanced";
+
+const LEVEL_GUIDANCE: Record<Level, string> = {
+  beginner:
+    "Audience: complete beginner with no prior knowledge. Use simple everyday words, short sentences, and friendly analogies. Avoid jargon. If a technical term is unavoidable, explain it inline.",
+  intermediate:
+    "Audience: someone with basic familiarity. Use accurate technical terms but briefly clarify them. Strike a balance between depth and approachability.",
+  advanced:
+    "Audience: an experienced practitioner. Use precise technical vocabulary, mention trade-offs, edge cases, and protocols/standards by name. Skip basic background.",
+};
+
 export async function POST(req: Request) {
   try {
-    const { topic } = await req.json();
+    const { topic, level } = (await req.json()) as {
+      topic?: string;
+      level?: Level;
+    };
 
     if (!topic) {
       return NextResponse.json(
@@ -11,10 +25,15 @@ export async function POST(req: Request) {
       );
     }
 
+    const safeLevel: Level =
+      level && level in LEVEL_GUIDANCE ? level : "intermediate";
+
     const prompt = `
 You are an expert teacher.
 
 Explain the topic: "${topic}"
+
+${LEVEL_GUIDANCE[safeLevel]}
 
 Return STRICT JSON in exactly this shape — no markdown, no code fences, no prose outside the JSON:
 
