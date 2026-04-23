@@ -1,36 +1,139 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# VisualExplain AI
 
-## Getting Started
+Explain any topic with a structured summary and an auto-generated visual
+diagram. Type a topic, pick a difficulty level, and get a clean
+explanation plus a Mermaid flowchart you can copy or share.
 
-First, run the development server:
+Built with Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS,
+and Mermaid. Powered by an OpenAI-compatible chat completions endpoint
+(works with the OpenAI API or AWS Bedrock's OpenAI-compatible models).
+
+## Features
+
+- **Structured explanations** — title, summary, components, and
+  step-by-step process for any topic.
+- **Auto-generated diagrams** — server returns Mermaid syntax that the
+  client renders to SVG.
+- **Three difficulty levels** — Beginner, Intermediate, Advanced.
+  Adjusts the prompt to change tone and depth.
+- **Example prompts** — one-click starter topics.
+- **History** — last 20 explanations are saved to `localStorage` and
+  restorable with one click.
+- **Copy buttons** — copy the explanation as plain text or the diagram
+  as raw Mermaid code.
+- **Loading skeletons + spinner** — polished loading experience.
+- **Graceful Mermaid fallback** — invalid diagrams are shown as raw
+  code with the parser error.
+
+## Tech stack
+
+| Layer | Tool |
+| --- | --- |
+| Framework | Next.js 16 (App Router) |
+| UI | React 19, Tailwind CSS v4 |
+| Language | TypeScript |
+| Diagrams | Mermaid v11 |
+| AI | OpenAI Chat Completions API (or any compatible endpoint) |
+
+## Getting started
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Configure environment variables
+
+Create a `.env.local` file in the project root:
+
+```bash
+# Required
+OPENAI_API_KEY=sk-...your-key
+
+# Optional — defaults shown
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+```
+
+To use **AWS Bedrock** (OpenAI-compatible endpoint) instead:
+
+```bash
+OPENAI_API_KEY=bedrock-api-key-...
+OPENAI_BASE_URL=https://bedrock-mantle.us-east-1.api.aws/v1
+OPENAI_MODEL=openai.gpt-oss-120b
+```
+
+> Bedrock session tokens expire (typically after 12 hours). Refresh
+> the key from the AWS console when requests start failing with 401/403.
+
+### 3. Run the dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open <http://localhost:3000>.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+app/
+  api/explain/route.ts   # POST endpoint — calls the LLM, returns JSON
+  layout.tsx             # Root layout, metadata, fonts
+  page.tsx               # Main UI (client component)
+  icon.svg               # Favicon (Next.js auto-detected)
+components/
+  CopyButton.tsx         # Reusable clipboard button
+  Diagram.tsx            # Renders Mermaid code to SVG
+  HistoryPanel.tsx       # Sidebar showing past explanations
+lib/
+  types.ts               # Shared TypeScript types
+  useHistory.ts          # Custom hook for localStorage history
+public/                  # Static assets
+```
 
-## Learn More
+## API
 
-To learn more about Next.js, take a look at the following resources:
+### `POST /api/explain`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Request body:**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```json
+{
+  "topic": "How HTTP works",
+  "level": "intermediate"
+}
+```
 
-## Deploy on Vercel
+`level` is optional and must be `"beginner"`, `"intermediate"`, or
+`"advanced"`. Defaults to `"intermediate"`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+**Response (200):**
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```json
+{
+  "title": "How HTTP Works",
+  "summary": "...",
+  "components": ["Client", "Server", "Request", "Response"],
+  "steps": ["Client opens a TCP connection ...", "..."],
+  "diagram_type": "flowchart",
+  "diagram_code": "flowchart TD\n  A[Client] --> B[Server] ..."
+}
+```
+
+**Error responses** include a `status` and `details` field for easier
+debugging.
+
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the dev server with hot reload |
+| `npm run build` | Build for production |
+| `npm start` | Run the production build |
+| `npm run lint` | Run ESLint |
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
