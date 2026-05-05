@@ -3,6 +3,7 @@
 import CopyButton from "@/components/CopyButton";
 import Diagram from "@/components/Diagram";
 import HistoryPanel from "@/components/HistoryPanel";
+import { tryParsePartial } from "@/lib/partialJson";
 import type { ExplainResult, HistoryEntry, Level } from "@/lib/types";
 import { useHistory } from "@/lib/useHistory";
 import { useState } from "react";
@@ -24,8 +25,10 @@ export default function Home() {
   const [topic, setTopic] = useState("");
   const [level, setLevel] = useState<Level>("intermediate");
   const [loading, setLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExplainResult | null>(null);
+  const [partial, setPartial] = useState<Partial<ExplainResult> | null>(null);
 
   const { entries, addEntry, removeEntry, clear } = useHistory();
 
@@ -33,8 +36,10 @@ export default function Home() {
     if (!nextTopic.trim()) return;
 
     setLoading(true);
+    setStreaming(false);
     setError(null);
     setResult(null);
+    setPartial(null);
 
     try {
       const res = await fetch("/api/explain", {
@@ -43,24 +48,64 @@ export default function Home() {
         body: JSON.stringify({ topic: nextTopic, level: nextLevel }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        setError(data.error ?? "Request failed");
+        // Error path: server returns JSON.
+        let message = "Request failed";
+        try {
+          const data = await res.json();
+          message = data.error ?? message;
+        } catch {
+          message = await res.text();
+        }
+        setError(message);
         return;
       }
 
-      const explainResult = data as ExplainResult;
-      setResult(explainResult);
+      if (!res.body) {
+        setError("No response body");
+        return;
+      }
+
+      // Stream path: server returns text/plain chunks of the JSON object.
+      setStreaming(true);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        setPartial(tryParsePartial<ExplainResult>(buffer));
+      }
+      buffer += decoder.decode();
+
+      // Final parse — strip fences and parse strictly.
+      const cleaned = buffer
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```$/i, "");
+
+      let final: ExplainResult;
+      try {
+        final = JSON.parse(cleaned) as ExplainResult;
+      } catch {
+        setError("Model did not return valid JSON");
+        return;
+      }
+
+      setResult(final);
+      setPartial(null);
       addEntry({
         topic: nextTopic,
         level: nextLevel,
-        result: explainResult,
+        result: final,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
     } finally {
       setLoading(false);
+      setStreaming(false);
     }
   }
 
@@ -78,8 +123,10 @@ export default function Home() {
     setTopic(entry.topic);
     setLevel(entry.level);
     setResult(entry.result);
+    setPartial(null);
     setError(null);
     setLoading(false);
+    setStreaming(false);
   }
 
   const explanationText = result
@@ -177,7 +224,11 @@ export default function Home() {
                   className="inline-flex w-fit items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
                 >
                   {loading && <Spinner />}
-                  {loading ? "Explaining..." : "Explain"}
+                  {loading
+                    ? streaming
+                      ? "Streaming..."
+                      : "Explaining..."
+                    : "Explain"}
                 </button>
               </form>
             </div>
@@ -196,47 +247,19 @@ export default function Home() {
                   {result && <CopyButton text={explanationText} />}
                 </div>
 
-                {loading && <ExplanationSkeleton />}
+                {loading && !streaming && <ExplanationSkeleton />}
 
-                {!loading && !result && (
+                {!loading && !result && !partial && (
                   <p className="text-gray-600">
                     Your AI-generated explanation will appear here.
                   </p>
                 )}
 
-                {!loading && result && (
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold">{result.title}</h3>
-                    <p className="text-gray-700">{result.summary}</p>
-
-                    {result.components?.length > 0 && (
-                      <div>
-                        <h4 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                          Components
-                        </h4>
-                        <ul className="list-disc pl-5 text-gray-700">
-                          {result.components.map((c, i) => (
-                            <li key={i}>{c}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {result.steps?.length > 0 && (
-                      <div>
-                        <h4 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                          Steps
-                        </h4>
-                        <ol className="list-decimal pl-5 text-gray-700">
-                          {result.steps.map((s, i) => (
-                            <li key={i}>
-                              {s.replace(/^\s*\d+[.)]\s*/, "")}
-                            </li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
-                  </div>
+                {(result || partial) && (
+                  <ExplanationView
+                    data={result ?? partial!}
+                    streaming={streaming && !result}
+                  />
                 )}
               </section>
 
@@ -251,7 +274,7 @@ export default function Home() {
                   )}
                 </div>
 
-                {loading && <DiagramSkeleton />}
+                {loading && !result && <DiagramSkeleton />}
 
                 {!loading && !result && (
                   <p className="text-gray-600">
@@ -280,6 +303,77 @@ export default function Home() {
         </div>
       </div>
     </main>
+  );
+}
+
+function ExplanationView({
+  data,
+  streaming,
+}: {
+  data: Partial<ExplainResult>;
+  streaming: boolean;
+}) {
+  const hasAny =
+    data.title ||
+    data.summary ||
+    (data.components && data.components.length > 0) ||
+    (data.steps && data.steps.length > 0);
+
+  if (!hasAny && streaming) {
+    return (
+      <p className="text-sm text-gray-500">
+        <span className="inline-block animate-pulse">Generating…</span>
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {data.title && (
+        <h3 className="text-lg font-semibold">
+          {data.title}
+          {streaming && <Caret />}
+        </h3>
+      )}
+      {data.summary && (
+        <p className="text-gray-700">
+          {data.summary}
+          {streaming && !data.components?.length && <Caret />}
+        </p>
+      )}
+
+      {data.components && data.components.length > 0 && (
+        <div>
+          <h4 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Components
+          </h4>
+          <ul className="list-disc pl-5 text-gray-700">
+            {data.components.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {data.steps && data.steps.length > 0 && (
+        <div>
+          <h4 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Steps
+          </h4>
+          <ol className="list-decimal pl-5 text-gray-700">
+            {data.steps.map((s, i) => (
+              <li key={i}>{s.replace(/^\s*\d+[.)]\s*/, "")}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Caret() {
+  return (
+    <span className="ml-0.5 inline-block h-4 w-2 -mb-0.5 animate-pulse bg-gray-400 align-middle" />
   );
 }
 

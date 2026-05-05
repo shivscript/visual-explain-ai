@@ -73,7 +73,7 @@ Output ONLY the JSON object. Nothing before it, nothing after it.
     const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
     const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const upstream = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -86,39 +86,73 @@ Output ONLY the JSON object. Nothing before it, nothing after it.
           { role: "user", content: prompt },
         ],
         temperature: 0.7,
+        stream: true,
       }),
     });
 
-    if (!response.ok) {
-      const details = await response.text();
+    if (!upstream.ok || !upstream.body) {
+      const details = await upstream.text();
       return NextResponse.json(
-        { error: "Upstream API call failed", status: response.status, details },
-        { status: 500 }
+        {
+          error: "Upstream API call failed",
+          status: upstream.status,
+          details,
+        },
+        { status: upstream.status || 500 }
       );
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    // Parse OpenAI-compatible SSE chunks and forward only the text deltas
+    // as a plain text stream. Client handles incremental JSON parsing.
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const reader = upstream.body!.getReader();
+        const decoder = new TextDecoder();
+        const encoder = new TextEncoder();
+        let buffer = "";
 
-    if (!content) {
-      return NextResponse.json(
-        { error: "No content in response", raw: data },
-        { status: 500 }
-      );
-    }
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
 
-    try {
-      const cleaned = content
-        .trim()
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/\s*```$/i, "");
-      return NextResponse.json(JSON.parse(cleaned));
-    } catch {
-      return NextResponse.json(
-        { error: "Model did not return valid JSON", raw: content },
-        { status: 500 }
-      );
-    }
+            // Split on SSE event boundaries.
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith("data:")) continue;
+              const payload = trimmed.slice(5).trim();
+              if (!payload || payload === "[DONE]") continue;
+              try {
+                const json = JSON.parse(payload);
+                const delta: string | undefined =
+                  json.choices?.[0]?.delta?.content ??
+                  json.choices?.[0]?.message?.content;
+                if (delta) controller.enqueue(encoder.encode(delta));
+              } catch {
+                // Ignore malformed chunks.
+              }
+            }
+          }
+        } catch (err) {
+          controller.error(err);
+          return;
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+      },
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json(
